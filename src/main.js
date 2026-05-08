@@ -36,7 +36,6 @@ import {
   t,
 } from './i18n.js';
 import { generateMaze, MAZE_SIZE } from './maze/mazeGenerator.js';
-import { CONTROLS_SIGN } from './maze/room.js';
 import {
   activateCheckpointOnMinimap,
   createMinimapState,
@@ -1335,14 +1334,7 @@ function benefactorPoint(room = currentRoom) {
 }
 
 function signPoint(room = currentRoom) {
-  const w = CONTROLS_SIGN.w;
-  const h = CONTROLS_SIGN.h;
-  return {
-    x: Math.round(CONTROLS_SIGN.cx - w / 2),
-    y: ROOM_H - WALL_THICKNESS - h,
-    w,
-    h,
-  };
+  return room.getControlsSignRect();
 }
 
 function getInteractableSign() {

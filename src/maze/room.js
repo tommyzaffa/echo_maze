@@ -25,16 +25,22 @@ import {
 import { drawDoorEdge, drawNpcSprite, drawRoomAtmosphere, drawSolidBlock } from '../graphics/sprites.js';
 import { t } from '../i18n.js';
 
-// Posizione e dimensione del cartello dei comandi nella stanza iniziale.
-// Esposto qui in modo che sia il rendering (room.js) sia il rilevamento di
-// interazione (main.js) usino esattamente lo stesso rettangolo.
+// Dimensione del cartello dei comandi nella stanza iniziale. La posizione
+// (x) viene calcolata dinamicamente da Room.getControlsSignRect() in modo
+// da non sovrapporsi a player, viandante, uscita sud o colline.
 export const CONTROLS_SIGN = {
   w: 28,
   h: 40,
-  // ~78% in larghezza: lontano dal player (centro) e dal viandante
-  // (a sinistra del centro). Il poste appoggia sul pavimento.
-  cx: ROOM_W * 0.78,
 };
+
+function rectsOverlapAabb(a, b) {
+  return (
+    a.x < b.x + b.w &&
+    a.x + a.w > b.x &&
+    a.y < b.y + b.h &&
+    a.y + a.h > b.y
+  );
+}
 
 export const DIR_OPPOSITE = { N: 'S', S: 'N', E: 'O', O: 'E' };
 
@@ -271,15 +277,90 @@ export class Room {
     }
   }
 
+  // Calcola (con cache) la posizione del cartello in modo che non si
+  // sovrapponga al player (spawn al centro), al viandante (npc), all'uscita
+  // sud o alle colline/piattaforme che intersecano la fascia del cartello.
+  getControlsSignRect() {
+    if (this._controlsSignRect) return this._controlsSignRect;
+    const w = CONTROLS_SIGN.w;
+    const h = CONTROLS_SIGN.h;
+    const y = ROOM_H - WALL_THICKNESS - h;
+
+    const avoid = [];
+
+    // Buffer attorno allo spawn del player (centro stanza, sul pavimento).
+    const spawnW = 96;
+    const spawnH = 96;
+    avoid.push({
+      x: ROOM_W / 2 - spawnW / 2,
+      y: ROOM_H - WALL_THICKNESS - spawnH,
+      w: spawnW,
+      h: spawnH,
+    });
+
+    // Viandante: stesso anchor usato in _renderMarkers (chooseFloorMarkerX).
+    if (this.meta.npc) {
+      const npcW = 28;
+      const npcH = 42;
+      const npcX = chooseFloorMarkerX(this.exits, ROOM_W / 2 + 18, npcW);
+      avoid.push({
+        x: npcX - 16,
+        y: ROOM_H - WALL_THICKNESS - npcH - 8,
+        w: npcW + 32,
+        h: npcH + 16,
+      });
+    }
+
+    // Colline/piattaforme che invadono la fascia verticale del cartello.
+    for (const solid of this.solids) {
+      if (solid.kind === 'platform' && solid.oneWay) continue;
+      if (solid.y + solid.h <= y) continue;
+      if (solid.y >= y + h) continue;
+      avoid.push({
+        x: solid.x - 6,
+        y: solid.y,
+        w: solid.w + 12,
+        h: solid.h,
+      });
+    }
+
+    const minX = WALL_THICKNESS + 8;
+    const maxX = ROOM_W - WALL_THICKNESS - 8 - w;
+
+    // Anchor preferiti, dal piu desiderato al fallback.
+    const anchors = [0.78, 0.22, 0.85, 0.15, 0.65, 0.35, 0.5].map((p) => ROOM_W * p);
+
+    for (const cx of anchors) {
+      for (let offset = 0; offset <= 120; offset += 8) {
+        const signs = offset === 0 ? [0] : [-1, 1];
+        for (const dir of signs) {
+          const rawX = Math.round(cx - w / 2 + dir * offset);
+          const x = Math.max(minX, Math.min(rawX, maxX));
+          if (overlapsSouthGap(this.exits, x, w, 14)) continue;
+          const rect = { x, y, w, h };
+          let blocked = false;
+          for (const a of avoid) {
+            if (rectsOverlapAabb(rect, a)) { blocked = true; break; }
+          }
+          if (blocked) continue;
+          this._controlsSignRect = rect;
+          return rect;
+        }
+      }
+    }
+
+    // Fallback: posizione originale, anche se non perfetta.
+    const fallbackX = Math.max(minX, Math.min(Math.round(ROOM_W * 0.78 - w / 2), maxX));
+    this._controlsSignRect = { x: fallbackX, y, w, h };
+    return this._controlsSignRect;
+  }
+
   _renderControlsSign(ctx) {
     // Cartello di legno: paletto verticale + asse orizzontale con un piccolo
     // bordo. Niente testo qui sopra: il dettaglio dei comandi appare nel
     // pannello modale quando il giocatore interagisce.
-    const w = CONTROLS_SIGN.w;
-    const h = CONTROLS_SIGN.h;
-    const x = Math.round(CONTROLS_SIGN.cx - w / 2);
-    const baseY = ROOM_H - WALL_THICKNESS;
-    const y = baseY - h;
+    const rect = this.getControlsSignRect();
+    const { x, y, w, h } = rect;
 
     ctx.save();
     // Paletto
