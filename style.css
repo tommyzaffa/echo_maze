@@ -116,6 +116,31 @@ html, body {
   gap: 10px;
 }
 
+.menu-footer {
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(122, 240, 255, 0.12);
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  line-height: 1.55;
+  color: rgba(216, 216, 232, 0.42);
+}
+
+.menu-footer a {
+  color: rgba(216, 216, 232, 0.62);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(122, 240, 255, 0.22);
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.menu-footer a:hover,
+.menu-footer a:focus {
+  color: var(--cyan);
+  border-bottom-color: var(--cyan);
+  outline: none;
+}
+
 .menu-actions.is-hidden {
   display: none;
 }
