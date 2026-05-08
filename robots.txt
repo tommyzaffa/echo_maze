@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://echomaze.quest/sitemap.xml
