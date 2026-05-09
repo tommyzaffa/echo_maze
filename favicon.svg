@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" shape-rendering="crispEdges">
+  <rect width="64" height="64" rx="10" ry="10" fill="#05070d"/>
+  <rect x="2" y="2" width="60" height="60" rx="9" ry="9" fill="none" stroke="#13202c" stroke-width="1"/>
+
+  <!-- corner accents (echo del menu) -->
+  <path d="M8 16 L8 8 L16 8" fill="none" stroke="#7af0ff" stroke-width="2" stroke-linecap="square"/>
+  <path d="M48 56 L56 56 L56 48" fill="none" stroke="#ffd166" stroke-width="2" stroke-linecap="square"/>
+
+  <!-- labirinto a spirale -->
+  <path d="M14 50 L14 14 L50 14 L50 46 L22 46 L22 22 L42 22 L42 38 L30 38 L30 30 L36 30"
+        fill="none"
+        stroke="#7af0ff"
+        stroke-width="3"
+        stroke-linecap="square"
+        stroke-linejoin="miter"/>
+
+  <!-- goal -->
+  <rect x="34" y="28" width="4" height="4" fill="#ffd166"/>
+</svg>
