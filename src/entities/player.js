@@ -411,13 +411,13 @@ export class Player {
     return 0;
   }
 
-  render(ctx, alpha, solids = []) {
+  render(ctx, alpha, solids = [], options = {}) {
     // Interpolazione tra stato precedente e attuale per fluidità a frame rate
     // diverso dal tickrate logico.
     const x = this.prevX + (this.x - this.prevX) * alpha;
     const y = this.prevY + (this.y - this.prevY) * alpha;
     const flickerOff = this.invulnTimer > 0 && Math.floor(this.invulnTimer * 18) % 2 === 0;
-    if (!flickerOff) drawPlayerSprite(ctx, this, x, y);
+    if (!flickerOff) drawPlayerSprite(ctx, this, x, y, options);
 
     const attack = this.getAttackHitbox(solids, x, y);
     drawPlayerAttack(ctx, attack, this);

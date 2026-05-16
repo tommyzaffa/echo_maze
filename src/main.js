@@ -61,6 +61,7 @@ import {
   drawTeleportAnchor,
   drawTemporaryPlatform,
 } from './graphics/sprites.js';
+import { addStack, canAddStack, stackSpace } from './systems/inventory.js';
 import { Rng } from './utils/rng.js';
 
 // --- Setup canvas ---
@@ -2522,9 +2523,28 @@ function selectableAbilities() {
   ));
 }
 
+function unownedAbilities() {
+  return ABILITIES.filter((ability) => !player.abilities.includes(ability.id));
+}
+
+function eligibleConsumableBundles(amountFor) {
+  return CONSUMABLES
+    .map((consumable) => ({
+      ...consumable,
+      amount: amountFor(consumable.id),
+    }))
+    .filter((consumable) => canAddStack(player, 'consumable', consumable.id, consumable.amount));
+}
+
 function grantConsumable(id, amount) {
   ensurePlayerCombatStats(player);
-  player.consumables[id] = (player.consumables[id] ?? 0) + amount;
+  if (!id) return 0;
+  return addStack(player, 'consumable', id, amount, { requireFullAmount: true });
+}
+
+function grantFood(amount) {
+  ensurePlayerCombatStats(player);
+  return addStack(player, 'food', null, amount);
 }
 
 function grantAbility(id) {
@@ -2558,7 +2578,7 @@ function openBenefactorGift() {
   gameState.gift = {
     initial,
     emptyInitial,
-    step: initial ? 'consumable' : 'random',
+    step: initial && eligibleConsumableBundles(benefactorConsumableAmount).length > 0 ? 'consumable' : initial ? 'ability' : 'random',
     selectedConsumableId: null,
   };
   gameState.shopSelectedIndex = 0;
@@ -2580,9 +2600,9 @@ function benefactorOptions() {
     return [{ id: 'random', name: t('giftAccept'), description: t('giftAcceptDesc') }];
   }
   if (gameState.gift.step === 'consumable') {
-    return CONSUMABLES.map((item) => ({
+    return eligibleConsumableBundles(benefactorConsumableAmount).map((item) => ({
       id: item.id,
-      name: `${consumableName(item.id)} x${benefactorConsumableAmount(item.id)}`,
+      name: `${consumableName(item.id)} x${item.amount}`,
       description: itemDescription({ type: 'consumable', consumableId: item.id }),
     }));
   }
@@ -2605,22 +2625,35 @@ function benefactorConsumableAmount(id) {
 function grantRandomBenefactorGift() {
   ensurePlayerCombatStats(player);
   const roll = runtimeRng.next();
-  if (roll < 0.34) {
-    const consumable = runtimeRng.choice(CONSUMABLES);
-    const amount = benefactorConsumableAmount(consumable.id);
-    grantConsumable(consumable.id, amount);
-    return t('giftConsumableReceived', { name: consumableName(consumable.id), amount });
-  }
-  if (roll < 0.67) {
-    const abilities = selectableAbilities();
-    if (abilities.length > 0) {
+  const attempts = roll < 0.34
+    ? ['consumable', 'ability', 'food']
+    : roll < 0.67
+      ? ['ability', 'consumable', 'food']
+      : ['food', 'consumable', 'ability'];
+
+  for (const type of attempts) {
+    if (type === 'consumable') {
+      const consumables = eligibleConsumableBundles(benefactorConsumableAmount);
+      if (consumables.length === 0) continue;
+      const consumable = runtimeRng.choice(consumables);
+      const amount = grantConsumable(consumable.id, consumable.amount);
+      return t('giftConsumableReceived', { name: consumableName(consumable.id), amount });
+    }
+    if (type === 'ability') {
+      const abilities = selectableAbilities();
+      if (abilities.length === 0) continue;
       const ability = runtimeRng.choice(abilities);
       grantAbility(ability.id);
       return t('giftAbilityReceived', { name: abilityName(ability.id) });
     }
+    if (type === 'food') {
+      const amount = grantFood(Math.min(5, stackSpace(player, 'food')));
+      if (amount <= 0) continue;
+      return t('giftFoodReceived', { amount });
+    }
   }
-  player.food += 5;
-  return t('giftFoodReceived', { amount: 5 });
+
+  return t('errorStackFull');
 }
 
 function chooseBenefactorGift() {
@@ -2655,6 +2688,12 @@ function chooseBenefactorGift() {
   }
 
   if (gameState.gift.step === 'consumable') {
+    if (!option) {
+      gameState.gift.step = 'ability';
+      gameState.shopSelectedIndex = 0;
+      renderBenefactorGift();
+      return;
+    }
     gameState.gift.selectedConsumableId = option.id;
     gameState.gift.step = 'ability';
     gameState.shopSelectedIndex = 0;
@@ -2667,7 +2706,7 @@ function chooseBenefactorGift() {
     gameState.gift.selectedConsumableId,
     benefactorConsumableAmount(gameState.gift.selectedConsumableId),
   );
-  player.food += 3;
+  grantFood(3);
   benefactorState.hasIntroduced = true;
   retireBenefactorAfterGift({ initial: true });
   renderHud();
@@ -2811,7 +2850,7 @@ function renderShop() {
     button.className = 'shop-buy';
     button.type = 'button';
     button.textContent = t('shopBuy');
-    button.disabled = blockedReason && blockedReason !== t('errorCoins');
+    button.disabled = blockedReason && ![t('errorCoins'), t('errorStackFull')].includes(blockedReason);
     button.addEventListener('click', () => {
       gameState.shopSelectedIndex = index;
       buySelectedShopItem();
@@ -3463,14 +3502,57 @@ function dropCloneFood(enemy, roomState) {
   }
 }
 
-function dropMinibossReward(enemy, roomState) {
-  if (roomState.minibossRewardDropped) return;
-  roomState.minibossRewardDropped = true;
-  const reward = currentRoom.meta.minibossReward ?? {
+function resolveMinibossReward(preferredReward) {
+  ensurePlayerCombatStats(player);
+  const reward = preferredReward ?? {
     type: 'consumable_bundle',
     consumableId: 'slow_time',
     amount: 7,
   };
+
+  if (reward.type === 'ability' && reward.abilityId && !player.abilities.includes(reward.abilityId)) {
+    return reward;
+  }
+  if (
+    reward.type === 'consumable_bundle' &&
+    reward.consumableId &&
+    canAddStack(player, 'consumable', reward.consumableId, reward.amount ?? 1)
+  ) {
+    return reward;
+  }
+
+  const abilities = unownedAbilities();
+  if (abilities.length > 0) {
+    const ability = runtimeRng.choice(abilities);
+    return { type: 'ability', abilityId: ability.id };
+  }
+
+  const amount = reward.amount ?? 1;
+  const fullBundle = eligibleConsumableBundles(() => amount);
+  if (fullBundle.length > 0) {
+    const consumable = runtimeRng.choice(fullBundle);
+    return { type: 'consumable_bundle', consumableId: consumable.id, amount };
+  }
+
+  const partialBundle = CONSUMABLES
+    .map((consumable) => ({
+      ...consumable,
+      amount: Math.min(amount, stackSpace(player, 'consumable', consumable.id)),
+    }))
+    .filter((consumable) => consumable.amount > 0);
+  if (partialBundle.length > 0) {
+    const consumable = runtimeRng.choice(partialBundle);
+    return { type: 'consumable_bundle', consumableId: consumable.id, amount: consumable.amount };
+  }
+
+  return null;
+}
+
+function dropMinibossReward(enemy, roomState) {
+  if (roomState.minibossRewardDropped) return;
+  roomState.minibossRewardDropped = true;
+  const reward = resolveMinibossReward(currentRoom.meta.minibossReward);
+  if (!reward) return;
   const baseX = enemy.x + enemy.w / 2;
   const baseY = enemy.y + enemy.h / 2;
   const pickupType = reward.type === 'consumable_bundle' ? 'consumable' : reward.type;
@@ -4402,7 +4484,7 @@ function render(alpha) {
   ctx.beginPath();
   ctx.rect(0, 0, ROOM_W, ROOM_H);
   ctx.clip();
-  player.render(ctx, alpha, getCurrentSolids());
+  player.render(ctx, alpha, getCurrentSolids(), { camouflaged: gameState.camouflageTimer > 0 });
   if (gameState.shieldTimer > 0) {
     drawShieldAura(ctx, player);
   }

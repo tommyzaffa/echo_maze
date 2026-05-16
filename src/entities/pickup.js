@@ -1,5 +1,6 @@
 import { COLORS, PICKUP } from '../config.js';
 import { drawPickupSprite } from '../graphics/sprites.js';
+import { addStack } from '../systems/inventory.js';
 import { rectsOverlap } from '../systems/physics.js';
 
 let nextPickupId = 1;
@@ -75,18 +76,15 @@ export class Pickup {
     } else if (this.type === 'life') {
       player.currentLife = Math.min(player.maxLifeSlots, player.currentLife + 1);
     } else if (this.type === 'food') {
-      player.food ??= 0;
-      player.food += this.amount;
+      if (addStack(player, 'food', null, this.amount, { requireFullAmount: true }) <= 0) return;
     } else if (this.type === 'ability') {
       player.abilities ??= [];
       if (this.abilityId && !player.abilities.includes(this.abilityId)) {
         player.abilities.push(this.abilityId);
       }
     } else if (this.type === 'consumable') {
-      player.consumables ??= {};
       if (this.consumableId) {
-        player.consumables[this.consumableId] ??= 0;
-        player.consumables[this.consumableId] += this.amount;
+        if (addStack(player, 'consumable', this.consumableId, this.amount, { requireFullAmount: true }) <= 0) return;
       }
     }
     this.collected = true;

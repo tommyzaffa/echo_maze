@@ -1,5 +1,6 @@
 import { PLAYER, SHOP } from '../config.js';
 import { itemName, t } from '../i18n.js';
+import { addStack, canAddStack, normalizeStackableInventory } from '../systems/inventory.js';
 import { Rng } from '../utils/rng.js';
 
 export const NPCS = {
@@ -164,8 +165,7 @@ export function createShopInventories(seed, options = {}) {
 
 export function ensureShopInventory(player) {
   player.abilities ??= [];
-  player.food ??= 0;
-  player.consumables ??= {};
+  normalizeStackableInventory(player, CONSUMABLES);
   player.superWeaponLevel ??= 1;
   for (const consumable of CONSUMABLES) {
     player.consumables[consumable.id] ??= 0;
@@ -194,6 +194,12 @@ function validatePurchase(player, gameState, item) {
   ensureShopInventory(player);
   if (!item) return t('errorUnavailable');
   if (item.stock <= 0) return t('errorSoldOut');
+  if (item.type === 'food' && !canAddStack(player, 'food')) {
+    return t('errorStackFull');
+  }
+  if (item.type === 'consumable' && !canAddStack(player, 'consumable', item.consumableId)) {
+    return t('errorStackFull');
+  }
   if (player.coins < item.price) return t('errorCoins');
 
   if (item.type === 'life_slot' && player.maxLifeSlots >= gameState.lifeSlotCap) {
@@ -230,11 +236,11 @@ export function buyShopItem(player, gameState, item) {
     player.maxLifeSlots = Math.min(gameState.lifeSlotCap, player.maxLifeSlots + 1);
     player.currentLife = player.maxLifeSlots;
   } else if (item.type === 'food') {
-    player.food += 1;
+    addStack(player, 'food');
   } else if (item.type === 'ability') {
     player.abilities.push(item.abilityId);
   } else if (item.type === 'consumable') {
-    player.consumables[item.consumableId] += 1;
+    addStack(player, 'consumable', item.consumableId);
   } else if (item.type === 'weapon_upgrade') {
     player.weaponLevel = item.targetLevel;
   } else if (item.type === 'super_upgrade') {

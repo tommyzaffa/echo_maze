@@ -142,6 +142,7 @@ const TEXT = {
     errorUpgradeBought: 'Upgrade already bought.',
     errorNeedWeapon: 'Need Weapon L{level} first.',
     errorNeedSuper: 'Need Super L{level} first.',
+    errorStackFull: 'Full.',
   },
   it: {
     gameTitle: 'Echo Maze',
@@ -277,6 +278,7 @@ const TEXT = {
     errorUpgradeBought: 'Upgrade già acquistato.',
     errorNeedWeapon: 'Serve prima Arma L{level}.',
     errorNeedSuper: 'Serve prima Super L{level}.',
+    errorStackFull: 'È full.',
   },
   fr: {
     gameTitle: 'Echo Maze',
@@ -412,6 +414,7 @@ const TEXT = {
     errorUpgradeBought: 'Amélioration déjà achetée.',
     errorNeedWeapon: 'Il faut Arme L{level} avant.',
     errorNeedSuper: 'Il faut Super L{level} avant.',
+    errorStackFull: 'Plein.',
   },
   de: {
     gameTitle: 'Echo Maze',
@@ -547,6 +550,7 @@ const TEXT = {
     errorUpgradeBought: 'Upgrade schon gekauft.',
     errorNeedWeapon: 'Zuerst Waffe L{level} nötig.',
     errorNeedSuper: 'Zuerst Super L{level} nötig.',
+    errorStackFull: 'Voll.',
   },
 };
 

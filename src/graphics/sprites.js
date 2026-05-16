@@ -740,6 +740,18 @@ const SIGNAL_ART = {
   green: '#91ff76',
 };
 
+const CAMOUFLAGE_PLAYER_ART = {
+  accent: '#66f0a6',
+  core: '#efffe8',
+  secondary: '#91ff76',
+  trim: '#66f0a6',
+  shell: '#12331f',
+  shell2: '#205b35',
+  void: '#041108',
+  void2: '#082015',
+  limb: '#baf7c6',
+};
+
 function drawSignalShard(ctx, cx, cy, size, color, rotation = 0, alpha = 1) {
   ctx.save();
   ctx.globalAlpha *= alpha;
@@ -965,6 +977,8 @@ export function drawPlayerSprite(ctx, player, x, y, options = {}) {
   const pose = playerPose(player, t);
   const cx = x + player.w / 2;
   const feetY = y + player.h;
+  const camouflaged = options.camouflaged === true;
+  const spriteOptions = camouflaged ? CAMOUFLAGE_PLAYER_ART : {};
 
   ctx.save();
   ctx.globalAlpha *= alpha;
@@ -978,14 +992,19 @@ export function drawPlayerSprite(ctx, player, x, y, options = {}) {
       ctx.globalAlpha *= 0.2 / i;
       ctx.translate(cx - pose.facing * i * 10, feetY);
       ctx.scale(pose.facing * PLAYER_VISUAL_SCALE, PLAYER_VISUAL_SCALE);
-      drawSignalPlayerLocal(ctx, pose, true);
+      drawSignalPlayerLocal(ctx, pose, true, spriteOptions);
       ctx.restore();
     }
   }
 
   ctx.translate(cx, feetY);
   ctx.scale(pose.facing * PLAYER_VISUAL_SCALE, PLAYER_VISUAL_SCALE);
-  drawSignalPlayerLocal(ctx, pose, false);
+  drawSignalPlayerLocal(ctx, pose, false, spriteOptions);
+  if (camouflaged) {
+    withAlpha(ctx, 0.5 + Math.sin(t * 6) * 0.12, () => {
+      strokeArc(ctx, 0, -28, 28, 22, Math.PI * 0.12, Math.PI * 1.88, CAMOUFLAGE_PLAYER_ART.accent, 1.2);
+    });
+  }
   drawPlayerSignalFlecks(ctx, pose, t);
   ctx.restore();
 }

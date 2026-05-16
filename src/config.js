@@ -396,6 +396,7 @@ export const ABILITY = {
 };
 
 export const CONSUMABLE = {
+  STACK_MAX: 10,
   SLOW_DURATION: 10,
   SLOW_FACTOR: 0.3,
   CAMOUFLAGE_DURATION: 10,
