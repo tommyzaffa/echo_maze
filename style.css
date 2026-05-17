@@ -324,6 +324,28 @@ html, body {
   background-size: 46px 46px, 46px 46px, auto;
 }
 
+.viewport-warning {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  z-index: 70;
+  max-width: min(520px, calc(100vw - 24px));
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 209, 102, 0.52);
+  background: rgba(12, 16, 27, 0.92);
+  color: #ffe5a0;
+  padding: 9px 14px;
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: center;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.38);
+  pointer-events: none;
+}
+
+.viewport-warning.is-hidden {
+  display: none;
+}
+
 .device-block.is-hidden,
 .cinematic-overlay.is-hidden,
 .rules-overlay.is-hidden {

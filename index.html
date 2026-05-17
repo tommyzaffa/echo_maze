@@ -49,10 +49,12 @@
   <div id="device-block" class="device-block is-hidden" aria-live="assertive">
     <div class="device-block-panel">
       <div class="device-block-kicker">Echo Maze</div>
-      <h2>Desktop build only</h2>
-      <p>Echo Maze needs a keyboard, precise controls and a wide screen. Open it on a desktop or laptop browser with the window enlarged.</p>
+      <h2 id="device-block-title">Desktop build only</h2>
+      <p id="device-block-message">Echo Maze needs a keyboard and a desktop or laptop browser. Mobile and tablet play is not supported.</p>
     </div>
   </div>
+
+  <div id="viewport-warning" class="viewport-warning is-hidden" aria-live="polite"></div>
 
   <div id="cinematic-overlay" class="cinematic-overlay is-hidden" aria-hidden="true">
     <video id="story-video" class="story-video" playsinline></video>

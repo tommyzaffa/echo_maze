@@ -92,6 +92,9 @@ const controlsBack = document.getElementById('controls-back');
 const controlsList = document.getElementById('controls-list');
 const controlsReset = document.getElementById('controls-reset');
 const deviceBlock = document.getElementById('device-block');
+const deviceBlockTitle = document.getElementById('device-block-title');
+const deviceBlockMessage = document.getElementById('device-block-message');
+const viewportWarning = document.getElementById('viewport-warning');
 const cinematicOverlay = document.getElementById('cinematic-overlay');
 const storyVideo = document.getElementById('story-video');
 const cinematicCaption = document.getElementById('cinematic-caption');
@@ -133,6 +136,7 @@ const appState = {
   deviceBlocked: false,
   cinematicOpen: false,
   rulesOpen: false,
+  viewportTooSmall: false,
   pendingIntro: introRequested,
   pendingRules: rulesRequested,
 };
@@ -238,16 +242,31 @@ const benefactorState = {
   hasIntroduced: false,
 };
 
-function isDesktopBuildAllowed() {
-  const hasLargeViewport = window.innerWidth >= 1000 && window.innerHeight >= 620;
-  const precisePointer = window.matchMedia?.('(pointer: fine)').matches ?? true;
-  const touchHeavy = (navigator.maxTouchPoints ?? 0) > 1;
-  return hasLargeViewport && precisePointer && !touchHeavy;
+function isMobileOrTabletDevice() {
+  const ua = navigator.userAgent ?? '';
+  const platform = navigator.platform ?? '';
+  const userAgentDataMobile = navigator.userAgentData?.mobile === true;
+  const iPadDesktopMode = platform === 'MacIntel' && (navigator.maxTouchPoints ?? 0) > 1;
+  const mobileOrTabletUa = /Android|iPhone|iPad|iPod|Mobile|Tablet|Kindle|Silk|Windows Phone/i.test(ua);
+  const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false;
+  const finePointer = window.matchMedia?.('(pointer: fine)').matches ?? false;
+  const hoverNone = window.matchMedia?.('(hover: none)').matches ?? false;
+  return userAgentDataMobile || iPadDesktopMode || mobileOrTabletUa || (coarsePointer && hoverNone && !finePointer);
+}
+
+function isDesktopViewportSmall() {
+  return window.innerWidth < 1000 || window.innerHeight < 620;
 }
 
 function refreshDeviceBlock() {
-  appState.deviceBlocked = !isDesktopBuildAllowed();
+  appState.deviceBlocked = isMobileOrTabletDevice();
+  appState.viewportTooSmall = !appState.deviceBlocked && isDesktopViewportSmall();
   if (deviceBlock) deviceBlock.classList.toggle('is-hidden', !appState.deviceBlocked);
+  if (deviceBlock) deviceBlock.setAttribute('aria-hidden', appState.deviceBlocked ? 'false' : 'true');
+  if (viewportWarning) {
+    viewportWarning.classList.toggle('is-hidden', !appState.viewportTooSmall);
+    viewportWarning.textContent = t('viewportWarning');
+  }
   if (appState.deviceBlocked) {
     gameState.paused = true;
     return;
@@ -2277,6 +2296,9 @@ function setControlsBoard(open) {
 
 function refreshLocalizedUi() {
   document.title = t('gameTitle');
+  if (deviceBlockTitle) deviceBlockTitle.textContent = t('desktopBlockTitle');
+  if (deviceBlockMessage) deviceBlockMessage.textContent = t('desktopBlockMessage');
+  if (viewportWarning) viewportWarning.textContent = t('viewportWarning');
   if (shopClose) shopClose.setAttribute('aria-label', t('shopClose'));
   if (abilityPanel) abilityPanel.setAttribute('aria-label', t('abilityPanelLabel'));
   renderMainMenu();
