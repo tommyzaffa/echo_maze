@@ -109,6 +109,12 @@ const CINEMATIC_SOURCES = {
   gameover: 'assets/video/gameover.mp4',
 };
 
+const HUD_REFRESH_INTERVAL = 0.1;
+const CLONE_SYNC_INTERVAL = 0.25;
+const DORMANT_REVIVER_INTERVAL = 0.5;
+const MAX_ACTIVE_HTML_SOUNDS = 24;
+const MAX_ACTIVE_WEB_AUDIO_VOICES = 48;
+
 const DISCOVERY_COLORS = {
   checkpoint: COLORS.CHECKPOINT,
   merchant: COLORS.NPC,
@@ -221,6 +227,10 @@ const gameState = {
   hudTopHtml: '',
   hudBottomHtml: '',
   abilityPanelHtml: '',
+  hudRefreshTimer: 0,
+  cloneSyncTimer: 0,
+  dormantReviverTimer: 0,
+  dormantReviverDt: 0,
   endRevealAt: 0,
   endVideoStarted: false,
   cinematicFinish: null,
@@ -753,6 +763,7 @@ function chooseCloneNextRoom(clone) {
 }
 
 function updateCloneMacroMovement(dt) {
+  let changed = false;
   for (const clone of aliveGlobalClones()) {
     if (clone.roomId === currentRoom.id) continue;
     clone.moveTimer -= dt;
@@ -765,10 +776,12 @@ function updateCloneMacroMovement(dt) {
       clone.roomId = nextRoomId;
       clone.entryDir = transitionEntryDir(previousRoomId, nextRoomId);
       clone.roomPosition = null;
+      changed = true;
     }
     clone.moveTimer = cloneTravelTime();
   }
   checkAdjacentCloneAlert();
+  return changed;
 }
 
 function getAdjacentRoomIds(room) {
@@ -1076,9 +1089,13 @@ function finishCloneRun(kind, messageKey, messageParams = {}) {
 
 function updateCloneSystem(dt) {
   if (cloneState.endKind) return;
-  updateCloneMacroMovement(dt);
+  const changed = updateCloneMacroMovement(dt);
+  gameState.cloneSyncTimer -= dt;
+  if (!changed && gameState.cloneSyncTimer > 0) return;
+
   syncGlobalClonesForCurrentRoom();
   recordCloneSnapshots();
+  gameState.cloneSyncTimer = CLONE_SYNC_INTERVAL;
 }
 
 function getRoomState(room) {
@@ -1586,6 +1603,8 @@ let htmlAudioUnlocked = false;
 let ambientMusic = null;
 let ambientAudio = null;
 let ambientLoopUrl = null;
+const activeHtmlSounds = new Set();
+const activeWebAudioVoices = new Set();
 
 function waveform(type, phase) {
   if (type === 'square') return phase < 0.5 ? 1 : -1;
@@ -1827,13 +1846,42 @@ function playHtmlSound(kind) {
     const urls = ensureHtmlAudioUrls();
     const url = urls[kind] ?? urls.hit;
     if (!url || typeof Audio === 'undefined') return false;
+
+    pruneHtmlSounds();
+    if (activeHtmlSounds.size >= MAX_ACTIVE_HTML_SOUNDS) return true;
+
     const audio = new Audio(url);
     audio.volume = 1;
+    activeHtmlSounds.add(audio);
+    const cleanup = () => releaseHtmlSound(audio, cleanup);
+    audio.addEventListener('ended', cleanup, { once: true });
+    audio.addEventListener('error', cleanup, { once: true });
     const result = audio.play();
-    if (result?.catch) void result.catch(() => {});
+    if (result?.catch) void result.catch(cleanup);
     return true;
   } catch {
     return false;
+  }
+}
+
+function pruneHtmlSounds() {
+  for (const audio of activeHtmlSounds) {
+    if (audio.ended) releaseHtmlSound(audio);
+  }
+}
+
+function releaseHtmlSound(audio, cleanup = null) {
+  activeHtmlSounds.delete(audio);
+  if (cleanup) {
+    audio.removeEventListener('ended', cleanup);
+    audio.removeEventListener('error', cleanup);
+  }
+  try {
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+  } catch {
+    // Best effort: these are short optional effects.
   }
 }
 
@@ -2128,6 +2176,11 @@ function unlockAudioFromGesture() {
       gain.gain.setValueAtTime(0.001, ctx.currentTime);
       oscillator.connect(gain);
       gain.connect(ctx.destination);
+      oscillator.onended = () => {
+        oscillator.onended = null;
+        try { oscillator.disconnect(); } catch { /* already disconnected */ }
+        try { gain.disconnect(); } catch { /* already disconnected */ }
+      };
       oscillator.start();
       oscillator.stop(ctx.currentTime + 0.02);
       audioUnlocked = true;
@@ -2142,10 +2195,20 @@ function scheduleGameSound(kind) {
   const ctx = ensureAudioContext();
   const notes = SOUND_PROFILES[kind] ?? SOUND_PROFILES.hit;
   for (const note of notes) {
+    if (activeWebAudioVoices.size >= MAX_ACTIVE_WEB_AUDIO_VOICES) break;
     const start = ctx.currentTime + (note.delay ?? 0);
     const duration = note.duration ?? 0.1;
     const oscillator = ctx.createOscillator();
     const gain = ctx.createGain();
+    const voice = { oscillator, gain };
+    activeWebAudioVoices.add(voice);
+    const cleanup = () => {
+      activeWebAudioVoices.delete(voice);
+      oscillator.onended = null;
+      try { oscillator.disconnect(); } catch { /* already disconnected */ }
+      try { gain.disconnect(); } catch { /* already disconnected */ }
+    };
+    oscillator.onended = cleanup;
     oscillator.type = note.type ?? 'sine';
     oscillator.frequency.setValueAtTime(note.frequency, start);
     if (note.endFrequency) {
@@ -3766,6 +3829,17 @@ function updateDormantRevivers(dt) {
   }
 }
 
+function updateDormantReviversThrottled(dt) {
+  gameState.dormantReviverTimer -= dt;
+  gameState.dormantReviverDt += dt * enemyTimeScale();
+  if (gameState.dormantReviverTimer > 0) return;
+
+  const simDt = gameState.dormantReviverDt;
+  gameState.dormantReviverTimer = DORMANT_REVIVER_INTERVAL;
+  gameState.dormantReviverDt = 0;
+  updateDormantRevivers(simDt);
+}
+
 function solidsForExistingRoomState(room, state) {
   const locks = room?.meta?.miniboss && state.minibossLocked && !state.minibossDefeated
     ? minibossLockSolids(room)
@@ -4319,19 +4393,29 @@ function renderHudBottom() {
   setHtmlIfChanged(hudBottom, 'hudBottomHtml', html);
 }
 
+function renderHudPair() {
+  renderHud();
+  renderHudBottom();
+  gameState.hudRefreshTimer = HUD_REFRESH_INTERVAL;
+}
+
+function renderHudIfDue(dt) {
+  gameState.hudRefreshTimer -= dt;
+  if (gameState.hudRefreshTimer > 0) return;
+  renderHudPair();
+}
+
 // --- Update logico (timestep fisso) ---
 function update(/* dt */) {
   updateAmbientMusicMix();
   if (cloneState.endKind) {
-    renderHud();
-    renderHudBottom();
+    renderHudIfDue(FIXED_DT);
     endTick();
     return;
   }
 
   if (gameState.paused) {
-    renderHud();
-    renderHudBottom();
+    renderHudIfDue(FIXED_DT);
     endTick();
     return;
   }
@@ -4352,11 +4436,10 @@ function update(/* dt */) {
   checkRoomTransition();
   updateCheckpointActivation();
   updateCloneSystem(FIXED_DT);
-  updateDormantRevivers(FIXED_DT * enemyTimeScale());
+  updateDormantReviversThrottled(FIXED_DT);
   updateRoomCombat(FIXED_DT);
   updateAdjacentRoomSimulation(FIXED_DT);
-  renderHud();
-  renderHudBottom();
+  renderHudIfDue(FIXED_DT);
   endTick();
 }
 
