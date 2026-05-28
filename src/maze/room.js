@@ -220,11 +220,7 @@ export class Room {
   // le aperture (utile per testare in M2). Le aperture sono semplicemente gap
   // nei solidi, ma rendiamo evidente il loro perimetro.
   render(ctx, colors) {
-    // Sfondo stanza.
-    drawRoomAtmosphere(ctx, this, colors);
-
-    // Solidi (pareti + piattaforme).
-    for (const s of this.solids) this._renderSolid(ctx, colors, s);
+    this._renderStaticLayer(ctx, colors);
 
     // Evidenziatore delle uscite (piccola fascia colorata sul bordo dell'apertura
     // per renderle visibili durante il test della M2).
@@ -252,6 +248,29 @@ export class Room {
 
   _renderSolid(ctx, colors, s) {
     drawSolidBlock(ctx, s, colors);
+  }
+
+  _renderStaticLayer(ctx, colors) {
+    const cache = this._staticLayer;
+    if (cache?.canvas) {
+      ctx.drawImage(cache.canvas, 0, 0);
+      return;
+    }
+
+    if (typeof document === 'undefined') {
+      drawRoomAtmosphere(ctx, this, colors);
+      for (const s of this.solids) this._renderSolid(ctx, colors, s);
+      return;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = ROOM_W;
+    canvas.height = ROOM_H;
+    const layerCtx = canvas.getContext('2d');
+    drawRoomAtmosphere(layerCtx, this, colors);
+    for (const s of this.solids) this._renderSolid(layerCtx, colors, s);
+    this._staticLayer = { canvas };
+    ctx.drawImage(canvas, 0, 0);
   }
 
   _renderMarkers(ctx, colors) {

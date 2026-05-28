@@ -68,6 +68,7 @@ import { Rng } from './utils/rng.js';
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 ctx.imageSmoothingEnabled = true;
+let backdropCache = null;
 const hudTop = document.getElementById('hud-top');
 const hudBottom = document.getElementById('hud-bottom');
 const abilityPanel = document.getElementById('ability-panel');
@@ -1124,8 +1125,27 @@ function createNonCloneEnemies(room) {
 
 function getSolidsForRoom(room) {
   const state = getRoomState(room);
-  const locks = isMinibossExitLocked(room) ? minibossLockSolids(room) : [];
-  return [...room.solids, ...state.tempPlatforms, ...locks];
+  const locksActive = Boolean(room?.meta?.miniboss && state.minibossLocked && !state.minibossDefeated);
+  const tempVersion = state.tempPlatformsVersion ?? 0;
+  const cache = state.solidsCache;
+  if (
+    cache &&
+    cache.locksActive === locksActive &&
+    cache.tempVersion === tempVersion
+  ) {
+    return cache.solids;
+  }
+
+  const locks = locksActive ? minibossLockSolids(room) : [];
+  const solids = state.tempPlatforms.length === 0 && locks.length === 0
+    ? room.solids
+    : [...room.solids, ...state.tempPlatforms, ...locks];
+  state.solidsCache = {
+    locksActive,
+    tempVersion,
+    solids,
+  };
+  return solids;
 }
 
 function getCurrentSolids() {
@@ -1599,6 +1619,7 @@ const SOUND_PROFILES = {
 let audioContext = null;
 let audioUnlocked = false;
 let htmlAudioUrls = null;
+let htmlUnlockUrl = null;
 let htmlAudioUnlocked = false;
 let ambientMusic = null;
 let ambientAudio = null;
@@ -1835,10 +1856,14 @@ function ensureHtmlAudioUrls() {
   for (const [kind, notes] of Object.entries(SOUND_PROFILES)) {
     htmlAudioUrls[kind] = buildToneUrl(notes);
   }
-  htmlAudioUrls.unlock = buildToneUrl([
+  return htmlAudioUrls;
+}
+
+function ensureHtmlUnlockUrl() {
+  htmlUnlockUrl ??= buildToneUrl([
     { type: 'sine', frequency: 880, duration: 0.025, gain: 0.005 },
   ]);
-  return htmlAudioUrls;
+  return htmlUnlockUrl;
 }
 
 function playHtmlSound(kind) {
@@ -2147,9 +2172,8 @@ function startAmbientMusic() {
 
 function unlockAudioFromGesture() {
   try {
-    const urls = ensureHtmlAudioUrls();
     if (!htmlAudioUnlocked && typeof Audio !== 'undefined') {
-      const audio = new Audio(urls.unlock);
+      const audio = new Audio(ensureHtmlUnlockUrl());
       audio.volume = 0.01;
       htmlAudioUnlocked = true;
       const result = audio.play();
@@ -2231,8 +2255,6 @@ function scheduleGameSound(kind) {
 }
 
 function playGameSound(kind) {
-  if (htmlAudioUnlocked && playHtmlSound(kind)) return;
-
   try {
     const ctx = ensureAudioContext();
     if (ctx.state === 'suspended') {
@@ -2244,7 +2266,7 @@ function playGameSound(kind) {
     }
     scheduleGameSound(kind);
   } catch {
-    playHtmlSound(kind);
+    if (htmlAudioUnlocked) playHtmlSound(kind);
   }
 }
 
@@ -3072,6 +3094,8 @@ function useMiniPlatform() {
     oneWay: true,
     kind: 'tempPlatform',
   });
+  state.tempPlatformsVersion = (state.tempPlatformsVersion ?? 0) + 1;
+  state.solidsCache = null;
   playGameSound('ui');
   renderHudBottom();
 }
@@ -4444,35 +4468,64 @@ function update(/* dt */) {
 }
 
 function renderCanvasBackdrop() {
-  ctx.fillStyle = COLORS.LETTERBOX;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
   const ratio = window.devicePixelRatio || 1;
+  if (
+    backdropCache?.canvas &&
+    backdropCache.width === canvas.width &&
+    backdropCache.height === canvas.height &&
+    backdropCache.ratio === ratio
+  ) {
+    ctx.drawImage(backdropCache.canvas, 0, 0);
+    return;
+  }
+
+  const targetCanvas = typeof document !== 'undefined'
+    ? document.createElement('canvas')
+    : canvas;
+  targetCanvas.width = canvas.width;
+  targetCanvas.height = canvas.height;
+  const targetCtx = targetCanvas === canvas ? ctx : targetCanvas.getContext('2d');
+  drawCanvasBackdrop(targetCtx, targetCanvas.width, targetCanvas.height, ratio);
+  if (targetCanvas !== canvas) {
+    backdropCache = {
+      canvas: targetCanvas,
+      width: targetCanvas.width,
+      height: targetCanvas.height,
+      ratio,
+    };
+    ctx.drawImage(targetCanvas, 0, 0);
+  }
+}
+
+function drawCanvasBackdrop(targetCtx, width, height, ratio) {
+  targetCtx.fillStyle = COLORS.LETTERBOX;
+  targetCtx.fillRect(0, 0, width, height);
   const grid = 40 * ratio;
-  ctx.save();
-  ctx.lineWidth = ratio;
-  ctx.strokeStyle = 'rgba(122, 240, 255, 0.075)';
-  ctx.beginPath();
-  for (let x = 0.5 * ratio; x < canvas.width; x += grid) {
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, canvas.height);
+  targetCtx.save();
+  targetCtx.lineWidth = ratio;
+  targetCtx.strokeStyle = 'rgba(122, 240, 255, 0.075)';
+  targetCtx.beginPath();
+  for (let x = 0.5 * ratio; x < width; x += grid) {
+    targetCtx.moveTo(x, 0);
+    targetCtx.lineTo(x, height);
   }
-  for (let y = 0.5 * ratio; y < canvas.height; y += grid) {
-    ctx.moveTo(0, y);
-    ctx.lineTo(canvas.width, y);
+  for (let y = 0.5 * ratio; y < height; y += grid) {
+    targetCtx.moveTo(0, y);
+    targetCtx.lineTo(width, y);
   }
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(255, 209, 102, 0.035)';
-  ctx.beginPath();
-  for (let x = grid / 2; x < canvas.width; x += grid) {
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, canvas.height);
+  targetCtx.stroke();
+  targetCtx.strokeStyle = 'rgba(255, 209, 102, 0.035)';
+  targetCtx.beginPath();
+  for (let x = grid / 2; x < width; x += grid) {
+    targetCtx.moveTo(x, 0);
+    targetCtx.lineTo(x, height);
   }
-  for (let y = grid / 2; y < canvas.height; y += grid) {
-    ctx.moveTo(0, y);
-    ctx.lineTo(canvas.width, y);
+  for (let y = grid / 2; y < height; y += grid) {
+    targetCtx.moveTo(0, y);
+    targetCtx.lineTo(width, y);
   }
-  ctx.stroke();
-  ctx.restore();
+  targetCtx.stroke();
+  targetCtx.restore();
 }
 
 function interactionPromptText() {
